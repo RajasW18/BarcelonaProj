@@ -18,6 +18,7 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
     try {
       const response = await apiFetch('/auth/request-otp', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ email }),
       })
       const data = await response.json()
@@ -32,11 +33,17 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
     setBusy(true); setError('')
     try {
       const response = await apiFetch('/auth/verify-otp', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ email, code }),
       })
       const data = await response.json()
       if (!response.ok) throw new Error(data.detail ?? 'That code did not work.')
+      const sessionResponse = await apiFetch('/auth/me', { credentials: 'include' })
+      if (!sessionResponse.ok) {
+        throw new Error('The code was accepted, but the session cookie was not saved. Refresh and try again.')
+      }
       onAuthenticated()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'That code did not work.')

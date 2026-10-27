@@ -6,7 +6,7 @@
  * in real time as tokens arrive.
  */
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { apiFetch, apiUrl } from '../lib/api'
+import { apiFetch } from '../lib/api'
 
 export type MessageRole = 'user' | 'assistant'
 
@@ -36,6 +36,24 @@ export interface ChatSession { id: string; title: string; updated_at: string }
 
 function createId(): string {
   return Math.random().toString(36).slice(2)
+}
+
+function normalizeSources(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((source): source is string => typeof source === 'string')
+  }
+  if (typeof value !== 'string' || !value.trim()) return []
+
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (Array.isArray(parsed)) {
+      return parsed.filter((source): source is string => typeof source === 'string')
+    }
+  } catch {
+    // Older records may contain a plain source string rather than JSON.
+  }
+
+  return [value]
 }
 
 export function useChat(): UseChatReturn {
@@ -70,8 +88,8 @@ export function useChat(): UseChatReturn {
     if (!response.ok) throw new Error('Could not load that chat.')
     const data = await response.json()
     setActiveSessionId(id)
-    setMessages(data.map((message: { id: number; role: MessageRole; content: string; sources?: string[] }) => ({
-      id: String(message.id), role: message.role, content: message.content, sources: message.sources ?? [],
+    setMessages(data.map((message: { id: number; role: MessageRole; content: string; sources?: unknown }) => ({
+      id: String(message.id), role: message.role, content: message.content, sources: normalizeSources(message.sources),
     })))
   }, [])
 
@@ -80,10 +98,9 @@ export function useChat(): UseChatReturn {
   }, [loadSessions])
 
   useEffect(() => {
-    if (activeSessionId && messages.length === 0) {
-      selectSession(activeSessionId).catch(() => undefined)
-    }
-  }, [activeSessionId, sessions.length, selectSession])
+    if (!activeSessionId) return
+    selectSession(activeSessionId).catch(() => undefined)
+  }, [activeSessionId, selectSession])
 
   const sendMessage = useCallback(async (text: string, context = '', sources: string[] = []) => {
     if (!text.trim() || isStreaming) return
@@ -180,7 +197,7 @@ export function useChat(): UseChatReturn {
               break
             } else if (event.type === 'sources') {
               setMessages(prev =>
-                prev.map(m => m.id === assistantId ? { ...m, sources: event.sources ?? [] } : m)
+                prev.map(m => m.id === assistantId ? { ...m, sources: normalizeSources(event.sources) } : m)
               )
             }
           } catch {

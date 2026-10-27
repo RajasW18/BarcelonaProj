@@ -23,6 +23,9 @@ const TOOL_BADGES: Record<string, { icon: React.ReactNode; label: string; color:
 
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user'
+  const sources = Array.isArray(message.sources)
+    ? message.sources.filter((source): source is string => typeof source === 'string')
+    : []
 
   if (isUser) {
     return (
@@ -117,9 +120,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           {message.isStreaming && message.content && (
             <span className="inline-block w-0.5 h-4 bg-[var(--color-barca-blue)] animate-pulse ml-0.5 align-text-bottom" />
           )}
-          {(message.sources ?? []).length > 0 && (
+          {sources.length > 0 && (
             <div className="mt-3 pt-2 border-t border-[var(--color-barca-border)] text-[10px] text-[var(--color-barca-muted)]">
-              Sources: {message.sources?.join(' • ')}
+              Sources: {sources.join(' • ')}
             </div>
           )}
         </div>
