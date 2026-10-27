@@ -1,4 +1,4 @@
-# 🚀 Running Barça Bot Locally
+# Running Ninety Locally
 
 This guide walks you through spinning up the full stack — database, backend API, and frontend — on your local machine.
 
@@ -73,7 +73,7 @@ uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Verify it's running by visiting:  
-👉 **http://localhost:8000/health** → should return `{"status":"ok","agent":"BarcaBot"}`
+👉 **http://localhost:8000/health** → should return `{"status":"ok","agent":"Ninety"}`
 
 You can also explore the auto-generated API docs at:  
 👉 **http://localhost:8000/docs**
@@ -136,4 +136,4 @@ docker compose down -v
 
 ---
 
-*Visca el Barça! 🔵🔴*
+Ninety uses the same local stack described in [README.md](README.md).
