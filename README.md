@@ -538,3 +538,170 @@ from FastAPI, and FastAPI loads them from PostgreSQL.
 - The stats SQL tool is intended to execute read-only queries.
 - Treat model-generated tactical analysis as an interpretation, not a verified
   official report.
+
+## Deploying Ninety
+
+Ninety is a two-service application in production:
+
+```text
+Vercel                  Render / Koyeb / Railway
+React static site  ---> FastAPI API
+                            |
+                            +--> Managed PostgreSQL
+                            +--> Cloud model provider
+```
+
+Vercel is appropriate for the frontend, but it is not a suitable host for the
+current local Ollama process or a long-running PostgreSQL connection. Deploy
+the React site to Vercel and deploy FastAPI separately.
+
+### Recommended free starting stack
+
+| Layer | Recommended service | Notes |
+|---|---|---|
+| Frontend | Vercel | Excellent fit for this Vite site |
+| Python API | Render free web service | Simple GitHub deployment; may sleep when idle |
+| PostgreSQL | Neon free PostgreSQL | Use its pooled connection string |
+| Email | Gmail SMTP or Brevo | Keep credentials only in the API host |
+| AI | OpenAI, Groq, or another hosted provider | Ollama on your laptop is not reachable by Render |
+
+Free hosting limits change frequently. Expect cold starts on free API services,
+limited database storage, and provider-specific usage limits. For a public
+production app, upgrade the API and database after validating the architecture.
+
+### Deploy the frontend to Vercel
+
+The repository includes [vercel.json](vercel.json), which configures the
+frontend build from the repository root.
+
+1. Push the repository to GitHub.
+2. Open Vercel and choose **Add New Project**.
+3. Import the repository.
+4. Keep the repository root as the project root.
+5. Vercel will use:
+
+```text
+Install command: npm --prefix frontend install
+Build command: npm --prefix frontend run build
+Output directory: frontend/dist
+```
+
+6. Deploy once to obtain a URL such as:
+   `https://ninety-football.vercel.app`
+7. Add this Vercel environment variable:
+
+```text
+VITE_API_URL=https://your-api-service.example.com
+```
+
+Do not include a trailing slash in `VITE_API_URL`. Redeploy after adding or
+changing it.
+
+### Deploy the backend to Render
+
+The repository includes [render.yaml](render.yaml) as a starting blueprint.
+
+1. Create a Render account and choose **New → Blueprint**.
+2. Select the GitHub repository.
+3. Review the `ninety-api` web service.
+4. Set the environment variables listed below.
+5. Deploy the service and copy its public URL, for example:
+   `https://ninety-api.onrender.com`
+
+Set these Render values:
+
+```text
+FRONTEND_URL=https://ninety-football.vercel.app
+AUTH_COOKIE_SECURE=true
+AUTH_COOKIE_SAMESITE=none
+GOOGLE_REDIRECT_URI=https://ninety-api.onrender.com/auth/google/callback
+DATABASE_URL=<Neon pooled PostgreSQL URL>
+```
+
+The deployed API also needs the email and AI provider variables:
+
+```text
+AUTH_SECRET=<long random secret>
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=<sender Gmail address>
+SMTP_PASSWORD=<Gmail App Password>
+SMTP_FROM=<sender Gmail address>
+OPENAI_API_KEY=<hosted provider key>
+OPENAI_BASE_URL=<provider-compatible URL>
+MODEL=<hosted text model>
+```
+
+For production, do not set `OPENAI_BASE_URL` to
+`http://localhost:11434/v1`. That address refers to the Render container
+itself, not your personal computer. Use a hosted model endpoint, or deploy a
+reachable inference service separately. If using Groq for vision, also set
+`GROQ_API_KEY` and `GROQ_VISION_MODEL`.
+
+### Create the managed database
+
+Create a free PostgreSQL database on Neon, copy its pooled connection string,
+and set it as Render's `DATABASE_URL`. The API creates the auth and chat tables
+on startup. Apply the football schema and ingest data from a trusted machine
+with access to the same database:
+
+```powershell
+psql "$env:DATABASE_URL" -f api\db\schema.sql
+python scripts\ingest_football_api.py --season 2024
+```
+
+If `psql` is not installed locally, use Neon SQL Editor to run
+[api/db/schema.sql](api/db/schema.sql), then run the ingestion script from a
+machine with the project environment configured.
+
+### Update Google OAuth for production
+
+In Google Cloud, add the deployed frontend origin:
+
+```text
+https://ninety-football.vercel.app
+```
+
+Replace the local redirect URI with the Render API callback:
+
+```text
+https://ninety-api.onrender.com/auth/google/callback
+```
+
+Update the same value in Render's `GOOGLE_REDIRECT_URI`. The callback must be
+the API URL, not the Vercel URL.
+
+### Production cookie and CORS behavior
+
+Local development uses a Vite proxy, so relative browser requests work on one
+origin. In production, the frontend calls the API using `VITE_API_URL`.
+Because the frontend and API are on different domains:
+
+- The frontend sends `credentials: include`.
+- FastAPI allows only the configured `FRONTEND_URL`.
+- Auth cookies use `Secure` and `SameSite=None`.
+- Both sites must use HTTPS.
+
+Do not use `allow_origins=["*"]` with credentialed cookies.
+
+### Other hosting options
+
+If Vercel or Render is not suitable:
+
+- **Netlify**: good Vite frontend alternative. Use the same `npm --prefix
+  frontend run build` command and `frontend/dist` output.
+- **Cloudflare Pages**: fast frontend hosting with a generous free tier.
+  Pair it with a separate Python API.
+- **Koyeb**: practical alternative for a small FastAPI service, subject to
+  current free-tier availability.
+- **Railway**: very convenient for API plus database, but its free/trial
+  availability and limits change more often.
+- **Hugging Face Spaces**: useful if the app later becomes a model demo, but
+  free CPU Spaces are not a good fit for responsive authenticated chat with
+  PostgreSQL.
+- **Fly.io**: flexible for Docker deployments, but confirm current pricing
+  before relying on a free allocation.
+
+The most straightforward migration path is Vercel + Render + Neon. If cold
+starts become frustrating, move only the API to a paid always-on service; the
+frontend can remain on Vercel.

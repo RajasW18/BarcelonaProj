@@ -105,7 +105,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[settings.frontend_url],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -193,7 +193,7 @@ async def google_login(response: Response):
         raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
     state = oauth_state()
     redirect = RedirectResponse(await google_authorization_url(state))
-    redirect.set_cookie("ninety_oauth_state", state, httponly=True, secure=settings.auth_cookie_secure, samesite="lax", max_age=600)
+    redirect.set_cookie("ninety_oauth_state", state, httponly=True, secure=settings.auth_cookie_secure, samesite=settings.auth_cookie_samesite, max_age=600)
     return redirect
 
 
