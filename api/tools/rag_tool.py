@@ -16,7 +16,10 @@ _openai_client: AsyncOpenAI | None = None
 def _get_client() -> AsyncOpenAI:
     global _openai_client
     if _openai_client is None:
-        _openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+        _openai_client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+        )
     return _openai_client
 
 

@@ -11,39 +11,45 @@
  */
 import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from 'react'
 import {
-  Send, Trash2, Trophy, BarChart2, User, Zap, ChevronRight
+  Send, Trash2, Zap, ChevronRight, Paperclip, Globe, X, FileText, Image as ImageIcon,
+  Sparkles, ArrowLeft, Trophy, BarChart3, Shield
 } from 'lucide-react'
 import { useChat } from '../hooks/useChat'
 import { MessageBubble } from './MessageBubble'
 import { TypingIndicator } from './TypingIndicator'
 import { VoiceButton } from './VoiceButton'
+import { apiFetch } from '../lib/api'
 
 const SUGGESTED_QUESTIONS = [
-  { icon: <Trophy size={14} />, text: "What's Barça's current La Liga position?" },
-  { icon: <BarChart2 size={14} />, text: "Show me the top scorers in La Liga this season" },
-  { icon: <User size={14} />, text: "Tell me about Lamine Yamal" },
-  { icon: <Zap size={14} />, text: "Explain Cruyff's total football philosophy" },
+  { icon: <Trophy size={14} />, text: "What are the latest league standings?" },
+  { icon: <BarChart3 size={14} />, text: "Compare two teams' recent form" },
+  { icon: <Shield size={14} />, text: "Explain a 4-3-3 pressing structure" },
+  { icon: <FileText size={14} />, text: "Analyze this match report" },
 ]
 
-const WELCOME_MESSAGE = `**Visca el Barça! 🔵🔴**
+const WELCOME_MESSAGE = `**Welcome to Ninety.**
 
-I'm **Barça Bot**, your ultimate FC Barcelona AI companion. I can answer questions about:
+I'm your football intelligence workspace. I can help you with:
 
-- 📊 **Live stats** — La Liga standings, match results, player statistics
-- 🏟️ **Club history** — trophies, legendary matches, historic moments  
-- ⭐ **Player profiles** — from Cruyff and Messi to Lamine Yamal and Pedri
-- 🧠 **Tactics** — tiki-taka, positional play, La Masia philosophy
+- Live standings, fixtures, scores, and player statistics
+- Tactical analysis and match explanations
+- Player, club, and competition context
+- Reports, images, and public URLs you attach
 
-Ask me anything — or click the 🎤 microphone to speak your question.
+Ask about the game, or attach context when you want a grounded analysis.
 
-*Més que un club.* 💙❤️`
+Your context stays in this browser session.`
 
-export function ChatInterface() {
-  const { messages, isStreaming, activeTools, sendMessage, clearMessages } = useChat()
+export function ChatInterface({ onBack, onLogout }: { onBack?: () => void; onLogout?: () => void }) {
+  const { messages, sessions, isStreaming, activeTools, sendMessage, clearMessages, selectSession, createNewSession, signOut } = useChat()
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [url, setUrl] = useState('')
+  const [processingAttachments, setProcessingAttachments] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -60,10 +66,35 @@ export function ChatInterface() {
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
-    if (!text || isStreaming) return
+    if ((!text && pendingFiles.length === 0 && !url.trim()) || isStreaming) return
     setInput('')
-    await sendMessage(text)
-  }, [input, isStreaming, sendMessage])
+    let context = ''
+    let sources: string[] = []
+    if (pendingFiles.length || url.trim()) {
+      setProcessingAttachments(true)
+      try {
+        const form = new FormData()
+        pendingFiles.forEach(file => form.append('files', file))
+        if (url.trim()) form.append('url', url.trim())
+        const response = await apiFetch('/attachments/prepare', { method: 'POST', body: form, credentials: 'include' })
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}))
+          throw new Error(error.detail ?? 'Could not process attachments.')
+        }
+        const prepared = await response.json()
+        context = prepared.context ?? ''
+        sources = prepared.sources ?? []
+      } catch (error) {
+        setInput(error instanceof Error ? error.message : 'Attachment processing failed.')
+        setProcessingAttachments(false)
+        return
+      }
+      setPendingFiles([])
+      setUrl('')
+      setProcessingAttachments(false)
+    }
+    await sendMessage(text || 'Analyze the attached context.', context, sources)
+  }, [input, isStreaming, pendingFiles, url, sendMessage])
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -89,7 +120,7 @@ export function ChatInterface() {
   const showWelcome = messages.length === 0
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[var(--color-barca-dark)]">
+    <div className="football-app-shell flex min-h-[100dvh] overflow-hidden bg-[var(--color-barca-dark)]">
       {/* ── Sidebar ──────────────────────────────────────────────── */}
       <aside
         className={[
@@ -106,14 +137,14 @@ export function ChatInterface() {
           <div className="flex items-center gap-3 mb-1">
             {/* Shield icon */}
             <div className="relative w-10 h-10 flex items-center justify-center blaugrana-gradient rounded-xl shadow-lg">
-              <span className="text-white font-black text-sm">FCB</span>
+              <Sparkles size={18} />
             </div>
             <div>
               <h1 className="font-bold text-[var(--color-barca-text)] text-sm leading-tight">
-                Barça Bot
+                Ninety
               </h1>
               <p className="text-[10px] text-[var(--color-barca-muted)]">
-                Més que un club
+                Match intelligence
               </p>
             </div>
           </div>
@@ -121,6 +152,16 @@ export function ChatInterface() {
 
         {/* Suggested questions */}
         <div className="p-4 flex-1 overflow-y-auto">
+          <button onClick={() => createNewSession()} className="new-chat-button"><span>+</span> New chat</button>
+          <p className="history-label">History</p>
+          <div className="history-list">
+            {sessions.map(session => (
+              <button key={session.id} onClick={() => selectSession(session.id)} className="history-item">
+                <span>{session.title}</span>
+              </button>
+            ))}
+            {sessions.length === 0 && <p className="history-empty">Your saved chats will appear here.</p>}
+          </div>
           <p className="text-[10px] uppercase tracking-widest text-[var(--color-barca-muted)] mb-3 font-semibold">
             Try asking…
           </p>
@@ -144,6 +185,12 @@ export function ChatInterface() {
 
         {/* Clear chat */}
         <div className="p-4 border-t border-[var(--color-barca-border)]">
+          <button
+            onClick={async () => { await signOut(); onLogout?.() }}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs text-[var(--color-barca-muted)] hover:text-[var(--color-barca-text)] hover:bg-white/5 transition-all duration-200"
+          >
+            Sign out
+          </button>
           <button
             onClick={clearMessages}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl 
@@ -172,13 +219,23 @@ export function ChatInterface() {
                 strokeLinecap="round" fill="none" />
             </svg>
           </button>
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="p-1.5 rounded-lg text-[var(--color-barca-muted)] hover:text-[var(--color-barca-text)] hover:bg-white/5 transition-colors"
+              aria-label="Back to home"
+              title="Back to home"
+            >
+              <ArrowLeft size={16} />
+            </button>
+          )}
 
           <div className="h-5 w-px bg-[var(--color-barca-border)]" />
 
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-sm font-medium text-[var(--color-barca-text)]">Barça Bot</span>
-            <span className="text-xs text-[var(--color-barca-muted)]">• GPT-4o</span>
+            <span className="text-sm font-medium text-[var(--color-barca-text)]">Ninety</span>
+            <span className="text-xs text-[var(--color-barca-muted)]">• Qwen 2.5</span>
           </div>
 
           <div className="ml-auto flex items-center gap-2">
@@ -208,11 +265,11 @@ export function ChatInterface() {
           {showWelcome && (
             <div className="flex flex-col items-center justify-center h-full text-center py-16 animate-[fadeIn_0.5s_ease-out]">
               <div className="w-20 h-20 blaugrana-gradient rounded-2xl flex items-center justify-center mb-6 shadow-2xl glow-blue">
-                <span className="text-white font-black text-2xl">FCB</span>
+                <Sparkles size={22} />
               </div>
-              <h2 className="text-2xl font-bold blaugrana-text mb-2">Barça Bot</h2>
+              <h2 className="text-2xl font-bold blaugrana-text mb-2">Ninety</h2>
               <p className="text-sm text-[var(--color-barca-muted)] mb-8">
-                Your AI-powered FC Barcelona companion
+                Your matchday intelligence desk
               </p>
 
               <div className="max-w-md glass rounded-2xl p-5 text-left text-sm text-[var(--color-barca-text)]/80 leading-relaxed">
@@ -249,8 +306,8 @@ export function ChatInterface() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask about Barça…"
-                disabled={isStreaming}
+                placeholder="Ask about the game…"
+                disabled={isStreaming || processingAttachments}
                 rows={1}
                 className="flex-1 bg-transparent resize-none outline-none text-sm 
                   text-[var(--color-barca-text)] placeholder-[var(--color-barca-muted)]
@@ -260,12 +317,44 @@ export function ChatInterface() {
               />
 
               <div className="flex items-center gap-1 flex-shrink-0 pb-1">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.docx,.txt,.md,.csv,.json,.py,.ts,.tsx,.js,.jsx,.html,.css,.sql,image/*"
+                  className="hidden"
+                  onChange={event => {
+                    setPendingFiles(prev => [...prev, ...Array.from(event.target.files ?? [])])
+                    event.target.value = ''
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isStreaming || processingAttachments}
+                  title="Attach files or images"
+                  className="p-2.5 rounded-xl text-[var(--color-barca-muted)] hover:text-[var(--color-barca-text)] hover:bg-white/5 disabled:opacity-40"
+                >
+                  <Paperclip size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const value = window.prompt('Paste a public website URL to analyze')
+                    if (value?.trim()) setUrl(value.trim())
+                  }}
+                  disabled={isStreaming || processingAttachments}
+                  title="Add a website URL"
+                  className="p-2.5 rounded-xl text-[var(--color-barca-muted)] hover:text-[var(--color-barca-text)] hover:bg-white/5 disabled:opacity-40"
+                >
+                  <Globe size={16} />
+                </button>
                 <VoiceButton onTranscript={handleTranscript} disabled={isStreaming} />
 
                 <button
                   id="send-btn"
                   onClick={handleSend}
-                  disabled={!input.trim() || isStreaming}
+                  disabled={(!input.trim() && !pendingFiles.length && !url.trim()) || isStreaming || processingAttachments}
                   aria-label="Send message"
                   className={[
                     'p-2.5 rounded-xl transition-all duration-200',
@@ -279,9 +368,32 @@ export function ChatInterface() {
               </div>
             </div>
 
+            {(pendingFiles.length > 0 || url) && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                {pendingFiles.map((file, index) => (
+                  <span key={`${file.name}-${index}`} className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-barca-border)] bg-white/5 px-2 py-1">
+                    <FileText size={12} /> {file.name}
+                    <button type="button" onClick={() => setPendingFiles(files => files.filter((_, i) => i !== index))} aria-label={`Remove ${file.name}`}>
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+                {url && (
+                  <span className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-barca-border)] bg-white/5 px-2 py-1">
+                    <Globe size={12} /> {url}
+                    <button type="button" onClick={() => setUrl('')} aria-label="Remove URL"><X size={12} /></button>
+                  </span>
+                )}
+                <span className="text-[var(--color-barca-muted)]">
+                  Attachments will be analyzed when you press send.
+                </span>
+              </div>
+            )}
+
             <p className="text-center text-[10px] text-[var(--color-barca-muted)] mt-2">
-              Press <kbd className="px-1 py-0.5 rounded bg-white/5 text-[9px]">Enter</kbd> to send •{' '}
+              {processingAttachments ? 'Preparing context…' : <>Press <kbd className="px-1 py-0.5 rounded bg-white/5 text-[9px]">Enter</kbd> to send •{' '}
               <kbd className="px-1 py-0.5 rounded bg-white/5 text-[9px]">Shift+Enter</kbd> for new line
+              </>}
             </p>
           </div>
         </div>

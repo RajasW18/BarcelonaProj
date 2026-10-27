@@ -97,7 +97,10 @@ async def main(knowledge_dir: Path, chunk_size: int, overlap: int, batch_size: i
 
     print(f"📚 Found {len(md_files)} knowledge file(s)\n")
 
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    client = AsyncOpenAI(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url,
+    )
     pool   = await asyncpg.create_pool(dsn=settings.database_url)
 
     # Clear existing chunks (re-ingest = fresh start)

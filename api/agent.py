@@ -3,13 +3,12 @@ Barça Bot Agent — OpenAI Agents SDK configuration.
 
 The agent has two tools:
   • sql_query       → structured match/stats queries
-  • barca_knowledge → RAG semantic search over club lore
+  • User-provided files, images, and URLs are supplied as request context
 """
 import os
 from openai import AsyncOpenAI
 from agents import Agent, set_default_openai_client, ModelSettings
 from api.tools.sql_tool import sql_query
-from api.tools.rag_tool import barca_knowledge
 from api.config import settings
 import agents
 
@@ -28,25 +27,22 @@ _openai_client = AsyncOpenAI(
 set_default_openai_client(_openai_client)
 
 SYSTEM_PROMPT = """
-You are **Barça Bot** 🔵🔴 — the ultimate AI companion for FC Barcelona fans.
-You are passionate, knowledgeable, and speak with the pride of a true Culé.
+You are **Ninety**, a football intelligence assistant.
+Help users think, write, research, plan, code, and analyze information.
 
 ## TOOL USE RULES — FOLLOW THESE STRICTLY
 
-### ALWAYS call `sql_query` for:
+### Use `sql_query` only for football-data questions:
 - La Liga standings, table position, points, wins, losses
 - Match results, scores, fixtures (past or upcoming)
 - Player statistics: goals, assists, appearances, cards
 - Squad list, player info from the database
 
-### ALWAYS call `barca_knowledge` for:
-- Player biographies and profiles (Messi, Lamine Yamal, Pedri, Gavi, etc.)
-- Club history, founding, trophies
-- La Masia academy philosophy
-- Tactical systems (tiki-taka, positional play)
-- Legends: Cruyff, Guardiola, Xavi, Iniesta, Ronaldinho
-- El Clásico, Camp Nou, supporter culture
-- Anything qualitative, historical, or narrative
+### For all other questions:
+- Answer from your general model knowledge when no user-provided context is attached.
+- Do not claim that facts came from a Barça knowledge base.
+- State briefly when a fact may be outdated or uncertain, especially for current players,
+  records, injuries, or recent events.
 
 ### NEVER call a tool for:
 - Pure conversational follow-ups: "longer", "shorter", "expand", "summarize that", "explain more", "give me more detail", "make it longer"
@@ -55,23 +51,54 @@ You are passionate, knowledgeable, and speak with the pride of a true Culé.
 
 ## Guidelines
 
-- **Be detailed and enthusiastic** — you are the world's biggest Barça expert.
-- **Be precise with numbers**: goals, dates, positions — accuracy matters.
-- **Be evocative about history**: paint pictures when discussing legends.
-- **Prioritize recency**: for standings/results, always use sql_query.
+- **Be useful and direct.** Match the user's requested level of detail.
+- **Be precise with numbers** and distinguish known facts from assumptions.
+- **Do not invent facts.** When uncertain, say so and recommend a source or ask the
+  user to provide a file or URL for analysis.
+- **Prioritize user-provided context** when it is attached.
 - **Gracefully handle gaps**: if data isn't available, say so honestly.
-- Use occasional Spanish/Catalan phrases when appropriate (Visca el Barça! 🔵🔴)
 - Use markdown formatting where helpful.
-
-You are the ultimate FC Barcelona expert. Make every Culé proud. 💙❤️
 """
 
 barca_agent = Agent(
-    name="BarcaBot",
+    name="Ninety",
     model=settings.model,
     instructions=SYSTEM_PROMPT,
-    tools=[sql_query, barca_knowledge],
+    tools=[sql_query],
     model_settings=ModelSettings(
         parallel_tool_calls=False,  # Llama/Groq fails with parallel tool calls
     ),
 )
+
+general_agent = Agent(
+    name="Ninety",
+    model=settings.model,
+    instructions=SYSTEM_PROMPT + """
+
+For this response, do not call tools. Answer directly from your general knowledge
+or from the user-provided context included in the request.
+""",
+    model_settings=ModelSettings(parallel_tool_calls=False),
+)
+
+
+async def generate_general_response(messages: list[dict]) -> str:
+    response = await _openai_client.chat.completions.create(
+        model=settings.model,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are Ninety, a helpful football intelligence assistant. "
+                    "Answer directly and naturally. Use user-provided context as evidence. "
+                    "For image questions, use the visual description and any filename hint "
+                    "as supporting context, but label identity as likely rather than certain "
+                    "unless the image contains clear identifying evidence. Do not invent "
+                    "facts; acknowledge uncertainty when appropriate."
+                ),
+            },
+            *messages,
+        ],
+        temperature=0.3,
+    )
+    return response.choices[0].message.content or ""

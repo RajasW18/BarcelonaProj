@@ -6,7 +6,7 @@
  * Shows tool badges when the agent used tools to answer.
  */
 import ReactMarkdown from 'react-markdown'
-import { Database, BookOpen } from 'lucide-react'
+import { Database } from 'lucide-react'
 import type { Message } from '../hooks/useChat'
 
 interface MessageBubbleProps {
@@ -18,11 +18,6 @@ const TOOL_BADGES: Record<string, { icon: React.ReactNode; label: string; color:
     icon: <Database size={10} />,
     label: 'Database',
     color: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
-  },
-  barca_knowledge: {
-    icon: <BookOpen size={10} />,
-    label: 'Knowledge Base',
-    color: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
   },
 }
 
@@ -121,6 +116,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           {/* Streaming cursor */}
           {message.isStreaming && message.content && (
             <span className="inline-block w-0.5 h-4 bg-[var(--color-barca-blue)] animate-pulse ml-0.5 align-text-bottom" />
+          )}
+          {(message.sources ?? []).length > 0 && (
+            <div className="mt-3 pt-2 border-t border-[var(--color-barca-border)] text-[10px] text-[var(--color-barca-muted)]">
+              Sources: {message.sources?.join(' • ')}
+            </div>
           )}
         </div>
       </div>

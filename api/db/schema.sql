@@ -8,6 +8,50 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- AUTHENTICATION AND CHAT HISTORY
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS users (
+    id           BIGSERIAL PRIMARY KEY,
+    email        VARCHAR(320) UNIQUE NOT NULL,
+    display_name VARCHAR(150),
+    avatar_url   TEXT,
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS auth_otps (
+    id           BIGSERIAL PRIMARY KEY,
+    email        VARCHAR(320) NOT NULL,
+    code_hash    CHAR(64) NOT NULL,
+    expires_at   TIMESTAMPTZ NOT NULL,
+    consumed_at  TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS auth_otps_email_idx ON auth_otps(email, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id         UUID PRIMARY KEY,
+    user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title      VARCHAR(160) NOT NULL DEFAULT 'New match room',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS chat_sessions_user_idx ON chat_sessions(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id         BIGSERIAL PRIMARY KEY,
+    session_id UUID NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    role       VARCHAR(20) NOT NULL CHECK (role IN ('user', 'assistant')),
+    content    TEXT NOT NULL,
+    sources    JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS chat_messages_session_idx ON chat_messages(session_id, created_at);
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- STRUCTURED TABLES  (served by sql_query tool)
 -- ─────────────────────────────────────────────────────────────────────────────
 
@@ -109,8 +153,7 @@ CREATE TABLE IF NOT EXISTS knowledge_chunks (
     source_file VARCHAR(200),
     chunk_index INTEGER,
     content     TEXT NOT NULL,
-    -- Gemini dimensions
-    embedding   vector(3072),
+    embedding   vector(768),
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 

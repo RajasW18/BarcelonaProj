@@ -2,7 +2,7 @@
  * TypingIndicator — animated three-dot typing indicator
  * shown while the agent is processing / streaming.
  */
-import { Database, BookOpen, Loader2 } from 'lucide-react'
+import { Database, Loader2 } from 'lucide-react'
 
 interface TypingIndicatorProps {
   activeTools?: string[]
@@ -12,10 +12,6 @@ const TOOL_LABELS: Record<string, { icon: React.ReactNode; label: string }> = {
   sql_query: {
     icon: <Database size={12} />,
     label: 'Querying match database…',
-  },
-  barca_knowledge: {
-    icon: <BookOpen size={12} />,
-    label: 'Searching knowledge base…',
   },
 }
 
